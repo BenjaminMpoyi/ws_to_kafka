@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+
+<html>
+<body>
+<script type="text/javascript">
+    var clientId = Math.random();
+    var webSocket = new WebSocket("ws://localhost:9000/ws");
+
+    webSocket.onopen = function(event){
+        console.log(event);
+    };
+
+    webSocket.onmessage = function(event){
+        console.log(event);
+    };
+
+    webSocket.onclose = function(event){
+        console.log("Connection closed");
+    };
+
+
+    window.setInterval(function(){
+        var data = JSON.stringify({'clientId': "" + clientId, 'timestamp': Date.now()});
+        console.log("send " + data);
+        webSocket.send(data);
+    }, 1000);
+</script>
+</body>
+</html>
