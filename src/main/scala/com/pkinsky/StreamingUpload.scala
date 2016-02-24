@@ -247,3 +247,65 @@ object Test extends App {
 }
 
 
+
+object Test2 extends App {
+  implicit val system: ActorSystem = ActorSystem()
+  implicit val ec: ExecutionContext = system.dispatcher
+  implicit val materializer: Materializer = ActorMaterializer()
+
+  val textOnly: Flow[Message, Message, Unit] =
+    Flow.fromGraph(GraphDSL.create() { implicit b =>
+      import GraphDSL.Implicits._
+
+
+      val unzip = b.add(Unzip[Option[TextMessage], Option[BinaryMessage]]())
+
+      unzip.out1 ~> Sink.ignore
+
+      val toT = Flow[Message].map{
+        case t: TextMessage => (Some(t), None)
+        case b: BinaryMessage => (None, Some(b))
+      }
+
+      val f = b.add(toT)
+
+      f.out ~> unzip.in
+
+      // expose ports
+      FlowShape(f.in, unzip.out0)
+    }).collect{ case Some(x) => x}
+
+
+  val textOnly2 = Flow[Message].collect{
+    case TextMessage.Strict(s) => s
+  }
+
+  val logger = Sink.foreach[Message]{
+    case TextMessage.Strict(s) => println(s"strict string: $s")
+    case t: TextMessage => t.textStream.runForeach(x => println(s"streaming string $x"))
+    case BinaryMessage.Strict(b) => println(s"strict bytes: $b")
+    case t: BinaryMessage=> t.dataStream.runForeach(x => println(s"streaming bytes $x"))
+
+  }
+
+  val flow: Flow[Message, Message, Unit] =
+    Flow.fromSinkAndSource(Flow[Message].to(logger), Source.maybe)
+
+  val routes: Flow[HttpRequest, HttpResponse, Unit] = handleWebsocketMessages(flow)
+
+  Http().bindAndHandle(routes, "localhost", 9000).onComplete(println)
+
+  def ws = Http().websocketClientFlow(WebsocketRequest(Uri(s"ws://localhost:9000/ws")))
+
+  Source(Vector(
+    TextMessage("foobar"),
+    TextMessage(Source.single("foobar")),
+    TextMessage(Source.single("foobar", "baz", "test", "et", "zzz")),
+    TextMessage(Source.single("foobar")),
+    TextMessage(Source.single("foobar")),
+    TextMessage(Source.single("foobar")),
+    BinaryMessage(ByteString("foobar")),
+    BinaryMessage(Source.single(ByteString("foobar")))
+  )).via(ws).runWith(Sink.foreach(println))
+
+}
