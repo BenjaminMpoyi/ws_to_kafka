@@ -13,7 +13,6 @@ libraryDependencies ++= {
     "com.typesafe.akka" %% "akka-http-core-experimental"          % akkaStreamV,
     "com.typesafe.akka" %% "akka-http-spray-json-experimental"    % akkaStreamV,
     "com.softwaremill.reactivekafka" %% "reactive-kafka-core"     % "0.9.0",
-    "com.typesafe.akka" %% "akka-agent" % "2.3.14",
     "com.typesafe.play" %% "play-json"                            % "2.4.6"
   )
 }

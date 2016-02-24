@@ -4,15 +4,12 @@ import java.net.URI
 import java.util.UUID
 
 import akka.actor._
-import akka.agent.Agent
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.StatusCodes.Success
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.ws._
 import akka.http.scaladsl.server.Directives._
 import akka.stream._
 import akka.stream.scaladsl._
-import akka.util.ByteString
 import com.softwaremill.react.kafka._
 import play.api.libs.json.Json
 
@@ -63,24 +60,6 @@ object StreamingUpload extends App {
         case (true, elem) =>
       })
 
-
-
-  //could also store 'terminators' ie. promises that completing closes the websocket with/without error if writes fail
-  val listeners: Agent[Map[Long, SourceQueue[Msg]]] = Agent(Map.empty)
-
-  def writeToListeners: Sink[Msg, Unit] = Flow[Msg].mapAsyncUnordered(10){ msg =>
-    listeners.get().get(msg.to).fold{
-      println(s"writing $msg to listeners but no listener registered")
-      Future.successful(true)
-    }{ q =>
-
-      println(s"offer msg $msg to queue")
-      q.offer(msg)}
-  }.to(Sink.foreach{
-    case false => println("dropped msg")
-    case true => println("wrote message")
-  })
-
   val parseMessage: Flow[Message, Event, Unit] =
     Flow[Message]//.map{x => println("preparse: " + x); x}
     .collect{
@@ -90,20 +69,10 @@ object StreamingUpload extends App {
     }
 
   def flow(id: Long): Flow[Message, Message, Unit] = {
-
-    //just fail if buffer overflow (too many msgs from kafka or issue sending to ws, I suppose this should suffice for now)
-    val msgs = Source.queue[Msg](20, OverflowStrategy.fail).mapMaterializedValue{ q  =>
-      println(s"register new listener with id $id")
-      listeners.send(m => m.updated(id, q))
-    }.map(m => Json.toJson(m)).map(j => TextMessage(j.toString()))
-
-    //val msgs = Source.single(Msg(1, "test msg")).map(m => Json.toJson(m)).map(j => TextMessage(j.toString()))
-
     Flow.fromSinkAndSource(
       sink = parseMessage.to(queueWriter(sourceQueue)),
-      source = msgs.alsoTo(Sink.ignore.mapMaterializedValue(f => f.onComplete{ case _ => println(s"deregister listener for id $id"); listeners.send(_ - id)}))
+      source = Source.maybe
     )
-
   }
 
   //note: can just do this and skip routes nonsense
@@ -120,18 +89,6 @@ object StreamingUpload extends App {
     }
 
   Http().bindAndHandle(routes, "localhost", 9000).onComplete(println)
-
-  val kafkaConsumer: Source[Msg, Unit] =
-    Source.fromPublisher(kafkaClient.consume(
-      ConsumerProperties(
-        bootstrapServers = localKafka, // IP and port of local Kafka instance
-        topic = Topics.msgTopic, // topic to consume messages from
-        groupId = "group1", // consumer group
-        valueDeserializer = Msg.deserializer
-      )
-    )).map(_.value())
-
-  kafkaConsumer.map{ x => println(s"get msg $x from kafka"); x}.alsoToMat(Sink.ignore)(Keep.right).to(writeToListeners).run().onComplete{ case x => println(s"kc done: $x")}
 }
 
 
@@ -246,66 +203,3 @@ object Test extends App {
 
 }
 
-
-
-object Test2 extends App {
-  implicit val system: ActorSystem = ActorSystem()
-  implicit val ec: ExecutionContext = system.dispatcher
-  implicit val materializer: Materializer = ActorMaterializer()
-
-  val textOnly: Flow[Message, Message, Unit] =
-    Flow.fromGraph(GraphDSL.create() { implicit b =>
-      import GraphDSL.Implicits._
-
-
-      val unzip = b.add(Unzip[Option[TextMessage], Option[BinaryMessage]]())
-
-      unzip.out1 ~> Sink.ignore
-
-      val toT = Flow[Message].map{
-        case t: TextMessage => (Some(t), None)
-        case b: BinaryMessage => (None, Some(b))
-      }
-
-      val f = b.add(toT)
-
-      f.out ~> unzip.in
-
-      // expose ports
-      FlowShape(f.in, unzip.out0)
-    }).collect{ case Some(x) => x}
-
-
-  val textOnly2 = Flow[Message].collect{
-    case TextMessage.Strict(s) => s
-  }
-
-  val logger = Sink.foreach[Message]{
-    case TextMessage.Strict(s) => println(s"strict string: $s")
-    case t: TextMessage => t.textStream.runForeach(x => println(s"streaming string $x"))
-    case BinaryMessage.Strict(b) => println(s"strict bytes: $b")
-    case t: BinaryMessage=> t.dataStream.runForeach(x => println(s"streaming bytes $x"))
-
-  }
-
-  val flow: Flow[Message, Message, Unit] =
-    Flow.fromSinkAndSource(Flow[Message].to(logger), Source.maybe)
-
-  val routes: Flow[HttpRequest, HttpResponse, Unit] = handleWebsocketMessages(flow)
-
-  Http().bindAndHandle(routes, "localhost", 9000).onComplete(println)
-
-  def ws = Http().websocketClientFlow(WebsocketRequest(Uri(s"ws://localhost:9000/ws")))
-
-  Source(Vector(
-    TextMessage("foobar"),
-    TextMessage(Source.single("foobar")),
-    TextMessage(Source.single("foobar", "baz", "test", "et", "zzz")),
-    TextMessage(Source.single("foobar")),
-    TextMessage(Source.single("foobar")),
-    TextMessage(Source.single("foobar")),
-    BinaryMessage(ByteString("foobar")),
-    BinaryMessage(Source.single(ByteString("foobar")))
-  )).via(ws).runWith(Sink.foreach(println))
-
-}
