@@ -7,7 +7,7 @@ scalaVersion  := "2.11.6"
 scalacOptions := Seq("-unchecked", "-feature", "-deprecation", "-encoding", "utf8")
 
 libraryDependencies ++= {
-  val akkaStreamV      = "2.0.1"
+  val akkaStreamV      = "2.0.3"
   Seq(
     "com.typesafe.akka" %% "akka-stream-experimental"             % akkaStreamV,
     "com.typesafe.akka" %% "akka-http-core-experimental"          % akkaStreamV,

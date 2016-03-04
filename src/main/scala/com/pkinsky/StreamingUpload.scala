@@ -1,89 +1,69 @@
 package com.pkinsky
 
-import akka.actor._
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.ws._
+import akka.http.scaladsl.model.{HttpResponse, HttpRequest}
+import akka.http.scaladsl.model.ws.{TextMessage, Message}
 import akka.http.scaladsl.server.Directives._
-import akka.stream._
-import akka.stream.scaladsl._
-import com.softwaremill.react.kafka._
-import org.apache.kafka.common.serialization._
+import akka.http.scaladsl.server.PathMatchers.PathEnd
+import akka.stream.{ActorMaterializer, Materializer, OverflowStrategy, SourceQueue}
+import akka.stream.scaladsl.{Flow, Sink, Source, RunnableGraph}
+import com.softwaremill.react.kafka.ReactiveKafka
 import play.api.libs.json.Json
-
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
+import scala.util.Success
+import scala.language.postfixOps
 
-
-object StreamingUpload extends App {
-  implicit val system: ActorSystem = ActorSystem()
-  implicit val ec: ExecutionContext = system.dispatcher
-  implicit val materializer: Materializer = ActorMaterializer()
-
-  val kafkaClient: ReactiveKafka = new ReactiveKafka()
-
-  val localKafka = "192.168.99.100:9092"
-
-  val kafkaSink: Sink[Event, Unit] =
-    Flow[Event].map(e => ProducerMessage(e)).to(
-    Sink.fromSubscriber(
-    kafkaClient.publish(
-      ProducerProperties(
-        bootstrapServers = localKafka, //IP and port of local Kafka instance
-        topic = "events", // topic to publish message to
-        valueSerializer = Event.serializer
-      )
-    )))
-
+object StreamingUpload extends App with AppContext {
   val kafkaPublisherGraph: RunnableGraph[SourceQueue[Event]] =
-    Source.queue[Event](1024, OverflowStrategy.backpressure)
-      .to(kafkaSink)
+    Source.queue[Event](1024, OverflowStrategy.backpressure).to(kafka.publish[Event](eventTopic))
 
   val sourceQueue: SourceQueue[Event] = kafkaPublisherGraph.run
 
-  def queueWriter[T](queue: SourceQueue[T]): Sink[T, Unit] =
-    Flow[T]
-      .mapAsync(1)( elem => queue.offer(elem).map( notDropped => (notDropped, elem) ) )
-      .to(Sink.foreach{
-        case (false, elem) => println(s"error: elem $elem rejected by queue")
-        case (true, elem) =>
-      })
+  val queueWriter: Sink[Event, Unit] =
+    Flow[Event].mapAsync(1){ elem =>
+      sourceQueue.offer(elem)
+        .andThen{
+          case Success(false) => println(s"failed to publish $elem to topic $eventTopic")
+        }
+    }.to(Sink.ignore)
 
-  val parseMessage: Flow[Message, Event, Unit] =
-    Flow[Message].collect{
-      case TextMessage.Strict(t) =>
-        val js = Json.parse(t)
-        Json.fromJson[Event](js).get
-    }
+  val parseMessages: Flow[Message, Event, Unit] =
+    Flow[Message]
+      .collect{
+        case TextMessage.Strict(t) =>
+          val js = Json.parse(t)
+          Json.fromJson[Event](js).get
+      }
 
-  val flow: Flow[Message, Message, Unit] =
+  val wsHandlerFlow: Flow[Message, Message, Unit] =
     Flow.fromSinkAndSource(
-      sink = parseMessage.to(queueWriter(sourceQueue)),
-      source = Source.maybe[Message]
+      sink = parseMessages.to(queueWriter),
+      source = Source.maybe
     )
 
   val routes: Flow[HttpRequest, HttpResponse, Unit] =
-    get {
-      path(PathEnd) {
-        println("/ executed")
-        getFromResource("test.html")
-      } ~
-        path("ws") {
-          println("/ws executed")
-          handleWebsocketMessages(flow)
-        }
-    }
+      get {
+        path(PathEnd) {
+          getFromResource("test.html")
+        } ~
+          path("ws") {
+            println("ws connection accepted")
+            handleWebsocketMessages(wsHandlerFlow)
+          }
+      }
 
-  Http().bindAndHandle(routes, "localhost", 9000).onComplete(println)
+  Http().bindAndHandle(routes, "localhost", port)
 
-  val kafkaConsumer: Source[Event, Unit] =
-    Source.fromPublisher(kafkaClient.consume(
-      ConsumerProperties(
-        bootstrapServers = localKafka, // IP and port of local Kafka instance
-        topic = "events", // topic to consume messages from
-        groupId = "group1", // consumer group
-        valueDeserializer = Event.deserializer
-      )
-    )).map(_.value())
+  println(s"listening on port $port")
 
-  kafkaConsumer.runForeach{ s => println(s"from kafka: $s")}
+  awaitTermination()
+}
+
+object KafkaListener extends App with AppContext {
+  val graph = kafka.consume[Event](eventTopic, "kafka_listener").to(Sink.foreach(println))
+
+  graph.run
+
+  awaitTermination()
 }

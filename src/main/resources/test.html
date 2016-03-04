@@ -20,7 +20,7 @@
 
 
     window.setInterval(function(){
-        var data = JSON.stringify({'clientId': "" + clientId, 'timestamp': Date.now()});
+        var data = JSON.stringify({'msg': "test msg",  'clientId': "" + clientId, 'timestamp': Date.now()});
         console.log("send " + data);
         webSocket.send(data);
     }, 1000);
