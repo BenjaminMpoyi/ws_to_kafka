@@ -262,3 +262,4 @@ Todo
 
 . `KafkaService`: handle Json parsing failures (corrupted messages or messages with missing fields) gracefully
 . Dockerize all the things
+. Don't assume even small messages are strict: https://github.com/akka/akka/issues/20096
