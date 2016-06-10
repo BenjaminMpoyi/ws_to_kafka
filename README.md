@@ -84,6 +84,8 @@ class KafkaService(kafkaClient: ReactiveKafka, conf: KafkaServiceConf) {
 If you're not familiar with the specifics of Kafka, don't worry: we've just constructed a black box that abstracts away most of the complexity of Kakfa, allowing us to focus on the task at hand: transforming streams of messages.
 
 Now that we have our Kafka service, we need to build a server that accepts incoming websocket connections and collects events to be published to Kafka.
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 First, we'll need to set up some context so we can run stream processing graphs, map over futures, et cetera. We'll use an `AppContext` trait to provide the required implicit context, some constants (the port used by our server and the topic to which events are published), and a pre-configured Kafka client.
 
