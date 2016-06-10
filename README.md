@@ -1,9 +1,12 @@
-(WIP) Server that consumes events via many websocket connections and publishes them to a Kafka topic
+Server that consumes events via many websocket connections and publishes them to a Kafka topic
 ============================
+
 
 Your app is a hit. Everyone's using your service. You've instrumented your website to collect real time usage data and you've set up a data processing pipeline to work with large amounts of data in real time, but how do you bridge the gap between web page and data pipeline? With websockets, Kafka and Akka Streams, of course!
 
 This blog post will show you how to build and test a server that accepts websocket connections and publishes json-encoded events received via websocket to kafka as json-encoded strings. I'll be explaining things as I go, but some familiarity with Akka Streams will help: you should know how to create, combine and materialize (run) Sources, Sinks and Flows using Akka Streams.
+
+(Note: the code is as solid as I can make it, but this blog post is a work in progress based on a talk I gave at NEScala 2016)
 
 ```scala
 case class Event(msg: String, clientId: String, timestamp: Long)
@@ -15,8 +18,8 @@ object Event {
 
 Events themselves are quite simple: an Event consists of a message, a client id and a timestamp. The play-json library is used to create an instance of the `Format` type class for `Event`, which provides the machinery required to convert Json objects to `Events` and vice versa. 
 
-first, we want to publish messages to kafka.
--------------
+Working with Kafka
+------------------
 
 We'll be using the Reactive Kafka library to publish streams of messages to Kafka and consume streams of messages from Kafka. First, we'll need to create serializers and deserializers that the Kafka client can use to serialize and deserialize streams of messages. 
 
@@ -83,8 +86,8 @@ class KafkaService(kafkaClient: ReactiveKafka, conf: KafkaServiceConf) {
 
 If you're not familiar with the specifics of Kafka, don't worry: we've just constructed a black box that abstracts away most of the complexity of Kakfa, allowing us to focus on the task at hand: transforming streams of messages.
 
-Now that we have our Kafka service, we need to build a server that accepts incoming websocket connections and collects events to be published to Kafka.
--------------------------------------------------------------------------------------------------------------------------------------------------------
+Building Our App
+----------------
 
 
 First, we'll need to set up some context so we can run stream processing graphs, map over futures, et cetera. We'll use an `AppContext` trait to provide the required implicit context, some constants (the port used by our server and the topic to which events are published), and a pre-configured Kafka client.
@@ -106,8 +109,6 @@ trait AppContext {
   val port = 9000 //server port
 }
 ```
-
-Both the load tester and the server will require access to these things, so let's put them in a trait.
 
 First, we create a graph that, when materialized, returns a `SourceQueue[Event]` and run it using the implicit materializer to get `sourceQueue`. Now we can publish messages to Kafka using `sourceQueue.offer(event)`, which takes an element of type `Event` and returns a `Future[Boolean]` which completes with `true` if the element was added to the queue or `false` if it was dropped.
 
@@ -131,9 +132,8 @@ val queueWriter: Sink[Event, Unit] =
 ```
 
 
-Now let's open some websocket connections.
-
--------------
+Working With Websockets
+-----------------------
 
 First, we'll need to parse incoming websocket `Messages`. We're only interested in `Strict` `TextMessages`, not streaming text messages or streaming or strict binary messages.
 
@@ -171,8 +171,8 @@ First, we'll need to parse incoming websocket `Messages`. We're only interested 
 
 ```
 
-now that we have server that takes msgs and pubs to kafka, let's test it
-------------------------------------------------------------------------
+Running the Server
+------------------
 
 First, run the app using `sbt run` and choose the third option, which should look something like ' [3] com.pkinsky.StreamingUpload'. Once the server is running, open 'localhost:9000' using your browser. The server should serve up a simple test page that logs events once per second. You can verify that messages are being sent using the developer console. Leave this page open.
 
@@ -211,8 +211,8 @@ Event(test msg,0.272857979638502,1456862579766)
 
 As expected, messages are sent to our server via websocket from the open page, published to Kafka by our server, consumed from Kafka by our listener, and logged to the console at a steady rate. If you open more pages by opening localhost:9000 in multiple browser windows, you should see the rate at which messages are logged increase.
 
-let's stress test it a bit
--------------
+Testing the Server
+------------------
 
 But how will our server perform under load? We'd like to avoid opening hundreds of browser tabs to run a test, so we'll create a small load tester application that uses Akka Http to create websocket client connections identical to those created by our test page.
 
@@ -255,5 +255,8 @@ This load testing app creates some configurable number of websocket client conne
 
 Run the streaming upload server again, close any browser tabs holding the test page, and run this app by using `sbt run` and choosing the first option, which should look something like '[2] com.pkinsky.LoadTest'.
 
-cool, no?
--------------
+Todo
+----
+
+. `KafkaService`: handle Json parsing failures (corrupted messages or messages with missing fields) gracefully
+. Dockerize all the things
