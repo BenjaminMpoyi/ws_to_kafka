@@ -1,11 +1,9 @@
-# Server that consumes events via many websocket connections and publishes them to a single Kafka topic
-
-Server that consumes events via many websocket connections and publishes them to a single Kafka topic
+(WIP) Server that consumes events via many websocket connections and publishes them to a Kafka topic
 ============================
 
 Your app is a hit. Everyone's using your service. You've instrumented your website to collect real time usage data and you've set up a data processing pipeline to work with large amounts of data in real time, but how do you bridge the gap between web page and data pipeline? With websockets, Kafka and Akka Streams, of course!
 
-This blog post will show you how to build a server that accepts websocket connections and publishes json-encoded events received via websocket to kafka as json-encoded strings.
+This blog post will show you how to build and test a server that accepts websocket connections and publishes json-encoded events received via websocket to kafka as json-encoded strings. I'll be explaining things as I go, but some familiarity with Akka Streams will help: you should know how to create, combine and materialize (run) Sources, Sinks and Flows using Akka Streams.
 
 ```scala
 case class Event(msg: String, clientId: String, timestamp: Long)
@@ -15,17 +13,12 @@ object Event {
 }
 ```
 
-Events themselves are quite simple: an Event consists of a message, a client id and a timestamp. The play-json library is used to create an instance of the `Format` type class for `Event`, which provides the machinery required to convert Json objects to `Events` and vice versa.
-
-todo: intro server, loadtester as two separate things
-
-what is akka streams (quick, with links for more info)
--------------
+Events themselves are quite simple: an Event consists of a message, a client id and a timestamp. The play-json library is used to create an instance of the `Format` type class for `Event`, which provides the machinery required to convert Json objects to `Events` and vice versa. 
 
 first, we want to publish messages to kafka.
 -------------
 
-We'll be using the Reactive Kafka library to publish streams of messages to Kafka and consume streams of messages from Kafka. First, we'll need to create serializers and deserializers that the Kafka client can use to serialize and deserialize streams of messages.
+We'll be using the Reactive Kafka library to publish streams of messages to Kafka and consume streams of messages from Kafka. First, we'll need to create serializers and deserializers that the Kafka client can use to serialize and deserialize streams of messages. 
 
 ```scala
 object KafkaService {
@@ -51,7 +44,7 @@ object KafkaService {
 }
 ```
 
-Most of this is just boilerplate: `serializer[T]` constructs a Kafka `Serializer[T]` for any type that can be written to a Json object. `deserializer[T]` constructs a Kafka `Deserializer[T]` for any type that can be read from a Json object. Now that we have a way to serialize and deserialize `Events` (which, via the implicit `Format` type class instance created earlier can be read from and written to Json objects), let's build something to handle publishing and consuming streams of messages.
+Most of this is just boilerplate: `serializer[T: Writes]` constructs a Kafka `Serializer[T]` for any type that can be written to a Json object. `deserializer[T: Reads]` constructs a Kafka `Deserializer[T]` for any type that can be read from a Json object. Now that we have a way to serialize and deserialize `Events` (which, via the implicit `Format` type class instance created earlier can be read from and written to Json objects), let's build something to handle publishing and consuming streams of messages.
 
 ```scala
 case class KafkaServiceConf(bootstrapServers: String)
@@ -90,11 +83,9 @@ class KafkaService(kafkaClient: ReactiveKafka, conf: KafkaServiceConf) {
 
 If you're not familiar with the specifics of Kafka, don't worry: we've just constructed a black box that abstracts away most of the complexity of Kakfa, allowing us to focus on the task at hand: transforming streams of messages.
 
-now that we have kafka pub svc, we need to accept incoming websocket connections
--------------
-//build thing, single route
+Now that we have our Kafka service, we need to build a server that accepts incoming websocket connections and collects events to be published to Kafka.
 
-//First, we'll need to set up some context so we can run stream processing graphs, map over futures, et cetera. We'll use an `AppContext` trait to provide the required implicit context, some constants (the port used by our server and the topic to which events are published), and a pre-configured Kafka client.
+First, we'll need to set up some context so we can run stream processing graphs, map over futures, et cetera. We'll use an `AppContext` trait to provide the required implicit context, some constants (the port used by our server and the topic to which events are published), and a pre-configured Kafka client.
 
 ```scala
 trait AppContext {
@@ -138,7 +129,8 @@ val queueWriter: Sink[Event, Unit] =
 ```
 
 
-now let's open some websocket connections
+Now let's open some websocket connections.
+
 -------------
 
 First, we'll need to parse incoming websocket `Messages`. We're only interested in `Strict` `TextMessages`, not streaming text messages or streaming or strict binary messages.
@@ -155,6 +147,7 @@ First, we'll need to parse incoming websocket `Messages`. We're only interested 
 
 `parseMessages` uses `collect` to map over only `Strict` `TextMessages` using a partial function that attempts to parse the text payload of each websocket message as a Json-encoded event.
 
+```
   val wsHandlerFlow: Flow[Message, Message, Unit] =
     Flow.fromSinkAndSource(
       sink = parseMessage.to(queueWriter),
@@ -173,6 +166,8 @@ First, we'll need to parse incoming websocket `Messages`. We're only interested 
       }
 
   Http().bindAndHandle(routes, "localhost", port)
+
+```
 
 now that we have server that takes msgs and pubs to kafka, let's test it
 ------------------------------------------------------------------------
