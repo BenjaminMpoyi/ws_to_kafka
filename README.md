@@ -21,6 +21,8 @@ Events themselves are quite simple: an Event consists of a message, a client id 
 Working with Kafka
 ------------------
 
+You'll need a Kafka 0.9 instance to follow along. If you use docker machine you can use the provided kafka_0.9.sh to get one running.
+
 We'll be using the Reactive Kafka library to publish streams of messages to Kafka and consume streams of messages from Kafka. First, we'll need to create serializers and deserializers that the Kafka client can use to serialize and deserialize streams of messages. 
 
 ```scala
@@ -174,7 +176,7 @@ First, we'll need to parse incoming websocket `Messages`. We're only interested 
 Running the Server
 ------------------
 
-First, run the app using `sbt run` and choose the third option, which should look something like ' [3] com.pkinsky.StreamingUpload'. Once the server is running, open 'localhost:9000' using your browser. The server should serve up a simple test page that logs events once per second. You can verify that messages are being sent using the developer console. Leave this page open.
+First, run the app using `sbt run` and choose the third option, which should look something like `[3] com.pkinsky.StreamingUpload`. Once the server is running, open 'localhost:9000' using your browser. The server should serve up a simple blank test page that logs events once per second. You can verify that messages are being sent using the developer console. Leave this page open.
 
 To confirm that our events are making it to Kafka, let's create a simple listener that consumes messages from our event topic and prints them using println.
 
