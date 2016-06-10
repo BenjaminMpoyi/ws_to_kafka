@@ -6,7 +6,7 @@ Your app is a hit. Everyone's using your service. You've instrumented your websi
 
 This blog post will show you how to build and test a server that accepts websocket connections and publishes json-encoded events received via websocket to kafka as json-encoded strings. I'll be explaining things as I go, but some familiarity with Akka Streams will help: you should know how to create, combine and materialize (run) Sources, Sinks and Flows using Akka Streams.
 
-(Note: the code is as solid as I can make it, but this blog post is a work in progress based on a talk I gave at NEScala 2016)
+(Note: this blog post is a work in progress based on a talk I gave at NEScala 2016)
 
 ```scala
 case class Event(msg: String, clientId: String, timestamp: Long)
