@@ -53,7 +53,7 @@ object KafkaService {
   def deserializer[T: Reads] = new Deserializer[T] {
     override def deserialize(topic: String, data: Array[Byte]): T = {
       val s = new String(data, "UTF-8")
-      Json.fromJson(Json.parse(s)).get //throw exception on error
+      Json.fromJson(Json.parse(s)).get //throw exception on error ¯\_(ツ)_/¯ (consider returning JsResult[T])
     }
 
     override def configure(configs: java.util.Map[String, _], isKey: Boolean): Unit = ()

@@ -5,11 +5,11 @@ import akka.http.scaladsl.model.{HttpResponse, HttpRequest}
 import akka.http.scaladsl.model.ws.{TextMessage, Message}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.PathMatchers.PathEnd
-import akka.stream.{ActorMaterializer, Materializer, OverflowStrategy, SourceQueue}
+import akka.stream._
 import akka.stream.scaladsl.{Flow, Sink, Source, RunnableGraph}
 import com.softwaremill.react.kafka.ReactiveKafka
 import play.api.libs.json.Json
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.Success
 import scala.language.postfixOps
